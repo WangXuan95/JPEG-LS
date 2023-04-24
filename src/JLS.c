@@ -1,0 +1,394 @@
+
+#define    ABS(x)               ( ((x) < 0) ? (-(x)) : (x) )                         // get absolute value
+#define    MAX(x, y)            ( ((x)<(y)) ? (y) : (x) )                            // get the minimum value of x, y
+#define    MIN(x, y)            ( ((x)<(y)) ? (x) : (y) )                            // get the maximum value of x, y
+#define    CLIP(x, min, max)    ( MIN(MAX((x), (min)), (max)) )                      // clip x between min~max
+
+#define    GET2D(ptr,xsz,y,x)   (*( (ptr) + (xsz)*(y) + (x) ))
+
+
+
+
+#define    RESET_VAL            64
+
+const int J [] = {0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,5,5,6,6,7,7,8,9,10,11,12,13,14,15};
+
+
+
+
+int getQbpp (int alpha) {
+    int qbpp = 1;
+    while ((1<<qbpp) < alpha)
+        qbpp ++;
+    return qbpp;
+}
+
+
+void setParameters (int bpp, int near, int *alpha, int *t1, int *t2, int *t3, int *quant, int *qbeta, int *qbpp, int *limit, int *a_init) {
+    int tmp;
+    *alpha = 1 << bpp;
+    tmp = (MIN(*alpha, 4096) + 127) / 256;
+    *t1 =     tmp + 2 + 3 * near;
+    *t2 = 4 * tmp + 3 + 5 * near;
+    *t3 = 17* tmp + 4 + 7 * near;
+    *quant = 2 * near + 1;
+    *qbeta = (*alpha + 4*near) / *quant;
+    *qbpp  = getQbpp(*qbeta);
+    *limit = 4 * bpp - *qbpp - 1;
+    *a_init = MAX((*qbeta+32)/64, 2);
+}
+
+
+int isNear (int near, int v1, int v2) {
+    return (v1-v2 <= near) && (v2-v1 <= near);
+}
+
+
+void samplePixels (int *img, int xsz, int i, int j, int *a, int *b, int *c, int *d) {
+    *a = 0;
+    *b = 0;
+    *c = 0;
+    *d = 0;
+    
+    if (i > 0) {
+        *b = GET2D(img, xsz, i-1, j);
+        *d = *b;
+        if (j+1 < xsz)
+            *d = GET2D(img, xsz, i-1, j+1);
+    }
+    
+    if (j <= 0) {
+        *a = *b;
+        if (i > 1)
+            *c = GET2D(img, xsz, i-2, j);
+    } else {
+        *a = GET2D(img, xsz, i, j-1);
+        if (i > 0)
+            *c = GET2D(img, xsz, i-1, j-1);
+    }
+}
+
+
+int gradientQuantize (int val, int near, int t1, int t2, int t3) {
+    int absval = ABS(val);
+    int sign   = (val < 0);
+    if (absval >=  t3) return sign ? -4 : 4;
+    if (absval >=  t2) return sign ? -3 : 3;
+    if (absval >=  t1) return sign ? -2 : 2;
+    if (absval > near) return sign ? -1 : 1;
+    return 0;
+}
+
+
+int getQ (int near, int t1, int t2, int t3, int a, int b, int c, int d) {
+    int Q1 = gradientQuantize(d-b, near, t1, t2, t3);
+    int Q2 = gradientQuantize(b-c, near, t1, t2, t3);
+    int Q3 = gradientQuantize(c-a, near, t1, t2, t3);
+    return 81*Q1 + 9*Q2 + Q3;
+}
+
+
+int predict (int a, int b, int c) {
+    if      (c >= MAX(a, b))
+        return MIN(a, b);
+    else if (c <= MIN(a, b))
+        return MAX(a, b);
+    else
+        return a + b - c;
+}
+
+
+int quantize (int near, int quant, int errval) {
+    if (errval < 0)
+        return -( (near - errval) / quant );
+    else
+        return    (near + errval) / quant  ;
+}
+
+
+int modRange (int qbeta, int val) {
+    if      (val < 0)
+        val += qbeta;
+    if (val >= (qbeta+1) / 2)
+        val -= qbeta;
+    return val;
+}
+
+
+int getK (int At, int Nt, int ritype) {
+    int k = 0;
+    if (ritype)
+        At += (Nt >> 1);
+    while ((Nt << k) < At)
+        k ++;
+    return k;
+}
+
+
+
+
+typedef struct {
+    unsigned char  bitmask;
+    unsigned char  byte;
+    unsigned char *pbuf;
+    unsigned char *pbuf_base;
+} BitWriter_t;
+
+
+BitWriter_t initBitWriter (unsigned char *pbuf) {
+    BitWriter_t bw = {0x80, 0x00, pbuf, pbuf};
+    return bw;
+}
+
+
+int getBitWriterLength (BitWriter_t *pbw) {
+    return pbw->pbuf - pbw->pbuf_base;
+}
+
+
+void writeValue (BitWriter_t *pbw, int value, int byte_cnt) {
+    int i = byte_cnt * 8;
+    for (i-=8; i>=0; i-=8) {
+        pbw->pbuf[0] = (value >> i) & 0xFF;
+        pbw->pbuf ++;
+    }
+}
+
+
+void writeBit (BitWriter_t *pbw, int bit) {
+    if (bit)
+        pbw->byte |= pbw->bitmask;
+    pbw->bitmask >>= 1;
+    if (pbw->bitmask == 0) {
+        pbw->pbuf[0] = pbw->byte;
+        pbw->pbuf ++;
+        pbw->bitmask = 0x80;
+        if (pbw->byte == 0xFF)
+            pbw->bitmask >>= 1;
+        pbw->byte = 0x00;
+    }
+}
+
+
+void writeBits (BitWriter_t *pbw, int bits, int n) {
+    for (n--; n>=0; n--)
+        writeBit(pbw, (bits>>n)&1);
+}
+
+
+void flushBits (BitWriter_t *pbw) {
+    if (pbw->bitmask < 0x80) {
+        pbw->pbuf[0] = pbw->byte;
+        pbw->pbuf ++;
+        pbw->bitmask = 0x80;
+        pbw->byte = 0x00;
+    }
+}
+
+
+void GolombCoding (BitWriter_t *pbw, int qbpp, int limit, int val, int k) {
+    if ((val>>k) < limit) {
+        writeBits(pbw, 0, val>>k);
+        writeBit (pbw, 1);
+        writeBits(pbw, val, k);
+    } else {
+        writeBits(pbw, 0, limit);
+        writeBit (pbw, 1);
+        writeBits(pbw, val-1, qbpp);
+    }
+}
+
+
+void writeJLShearder (BitWriter_t *pbw, int bpp, int near, int ysz, int xsz) {
+    writeValue(pbw, 0xFFD8     , 2);
+    writeValue(pbw, 0xFFF7000B , 4);
+    writeValue(pbw, bpp        , 1);
+    writeValue(pbw, ysz        , 2);
+    writeValue(pbw, xsz        , 2);
+    writeValue(pbw, 0x01011100 , 4);
+    writeValue(pbw, 0xFFDA     , 2);
+    writeValue(pbw, 0x0008     , 2);
+    writeValue(pbw, 0x010100   , 3);
+    writeValue(pbw, near       , 1);
+    writeValue(pbw, 0x0000     , 2);
+}
+
+
+void writeJLSend (BitWriter_t *pbw) {
+    writeValue(pbw, 0xFFD9     , 2);
+}
+
+
+
+
+int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsigned char *pbuf) {
+    int A  [364];
+    int B  [364];
+    int C  [364];
+    int N  [364];
+    int Ar [2];
+    int Br [2];
+    int Nr [2];
+    
+    BitWriter_t bw = initBitWriter(pbuf);
+    
+    int alpha, t1, t2, t3, quant, qbeta, qbpp, limit, a_init;
+    int run_idx = 0;
+    int i, j;
+    
+    bpp = CLIP(bpp, 8, 16);
+    setParameters(bpp, near, &alpha, &t1, &t2, &t3, &quant, &qbeta, &qbpp, &limit, &a_init);
+    
+    for (i=0; i<364; i++) {
+        A[i] = a_init;
+        B[i] = 0;
+        C[i] = 0;
+        N[i] = 1;
+    }
+    
+    for (i=0; i<2; i++) {
+        Ar[i] = a_init;
+        Br[i] = 0;
+        Nr[i] = 1;
+    }
+    
+    writeJLShearder(&bw, bpp, near, ysz, xsz);
+    
+    for (i=0; i<ysz; i++) {
+        int running=0 , run_cnt=0;
+        
+        for (j=0; j<xsz; j++) {
+            int runend = 0;
+            int x, px, rx, a, b, c, d, q, sign, errval, k, map, merrval;
+            
+            x = GET2D(img, xsz, i, j);
+            samplePixels(imgrcon, xsz, i, j, &a, &b, &c, &d);
+            
+            q = getQ(near, t1, t2, t3, a, b, c, d);
+            
+            sign = (q<0) ? -1 : +1;
+            q = ABS(q);
+            
+            running |= (q == 0);
+            
+            if (running) {
+                running = isNear(near, x, a);
+                runend  = !running;
+            }
+            
+            if (running) {
+                GET2D(imgrcon, xsz, i, j) = a;
+                
+                run_cnt ++;
+                if (run_cnt >= (1<<J[run_idx])) {
+                    writeBit(&bw, 1);
+                    run_cnt -= (1<<J[run_idx]);
+                    if (run_idx < 31)
+                        run_idx ++;
+                }
+                
+                if (j == xsz-1 && run_cnt > 0)
+                    writeBit(&bw, 1);
+                
+            } else if (runend) {
+                int glimit = limit - 1 - J[run_idx];
+                
+                writeBits(&bw, run_cnt, J[run_idx]+1);
+                run_cnt = 0;
+                if (run_idx > 0)
+                    run_idx --;
+                
+                q = isNear(near, a, b);
+                sign = (a > (b + near)) ? -1 : +1;
+                
+                px = q ? a : b;
+                errval = sign * (x - px);
+                errval = quantize(near, quant, errval);
+                
+                if (near) {
+                    rx = px + sign * quant * errval;
+                    rx = CLIP(rx, 0, alpha-1);
+                    GET2D(imgrcon, xsz, i, j) = rx;
+                } else {
+                    GET2D(imgrcon, xsz, i, j) = x;
+                }
+                
+                errval = modRange(qbeta, errval);
+                k = getK(Ar[q], Nr[q], q);
+                
+                map = (errval!=0) && ( (errval>0) == (k==0 && 2*Br[q]<Nr[q]) );
+                merrval = 2 * ABS(errval) - q - map;
+                
+                GolombCoding(&bw, qbpp, glimit, merrval, k);
+                
+                if (errval < 0)
+                    Br[q] ++;
+                Ar[q] += ((merrval+1-q) >> 1);
+                if (Nr[q] >= RESET_VAL) {
+                    Ar[q] >>= 1;
+                    Br[q] >>= 1;
+                    Nr[q] >>= 1;
+                }
+                Nr[q] ++;
+                
+            } else {
+                run_cnt = 0;
+                q --;
+                
+                px = predict(a,b,c) + sign * C[q];
+                px = CLIP(px, 0, alpha-1);
+                
+                errval = sign * (x - px);
+                errval = quantize(near, quant, errval);
+                
+                if (near) {
+                    rx = px + sign * quant * errval;
+                    rx = CLIP(rx, 0, alpha-1);
+                    GET2D(imgrcon, xsz, i, j) = rx;
+                } else {
+                    GET2D(imgrcon, xsz, i, j) = x;
+                }
+                
+                errval = modRange(qbeta, errval);
+                k = getK(A[q], N[q], 0);
+                
+                map = (k==0) && (2*B[q]<=-N[q]) && (near==0);
+                merrval = 2 * ABS(errval);
+                if (errval < 0)
+                    merrval -= map + 1;
+                else
+                    merrval += map;
+                
+                GolombCoding(&bw, qbpp, limit, merrval, k);
+                
+                B[q] += errval * quant;
+                A[q] += ABS(errval);
+                if (N[q] >= RESET_VAL) {
+                    A[q] >>= 1;
+                    B[q] >>= 1;
+                    N[q] >>= 1;
+                }
+                N[q] ++;
+                if (B[q] <= -N[q]) {
+                    B[q] += N[q];
+                    B[q] = MAX(B[q], -N[q]+1);
+                    C[q] --;
+                } else if (B[q] > 0) {
+                    B[q] -= N[q];
+                    B[q] = MIN(B[q], 0);
+                    C[q] ++;
+                }
+                C[q] = CLIP(C[q], -128, 127);
+            }
+        }
+    }
+    
+    flushBits(&bw);
+    writeJLSend(&bw);
+    
+    return getBitWriterLength(&bw);
+}
+
+
+
+
