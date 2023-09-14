@@ -24,7 +24,7 @@ int getQbpp (int alpha) {
 }
 
 
-void setParameters (int bpp, int near, int *alpha, int *t1, int *t2, int *t3, int *quant, int *qbeta, int *qbpp, int *limit, int *a_init) {
+static void setParameters (int bpp, int near, int *alpha, int *t1, int *t2, int *t3, int *quant, int *qbeta, int *qbpp, int *limit, int *a_init) {
     int tmp;
     *alpha = 1 << bpp;
     tmp = (MIN(*alpha, 4096) + 127) / 256;
@@ -39,12 +39,12 @@ void setParameters (int bpp, int near, int *alpha, int *t1, int *t2, int *t3, in
 }
 
 
-int isNear (int near, int v1, int v2) {
+static int isNear (int near, int v1, int v2) {
     return (v1-v2 <= near) && (v2-v1 <= near);
 }
 
 
-void samplePixels (int *img, int xsz, int i, int j, int *a, int *b, int *c, int *d) {
+static void samplePixels (int *img, int xsz, int i, int j, int *a, int *b, int *c, int *d) {
     *a = 0;
     *b = 0;
     *c = 0;
@@ -69,7 +69,7 @@ void samplePixels (int *img, int xsz, int i, int j, int *a, int *b, int *c, int 
 }
 
 
-int gradientQuantize (int val, int near, int t1, int t2, int t3) {
+static int gradientQuantize (int val, int near, int t1, int t2, int t3) {
     int absval = ABS(val);
     int sign   = (val < 0);
     if (absval >=  t3) return sign ? -4 : 4;
@@ -80,7 +80,7 @@ int gradientQuantize (int val, int near, int t1, int t2, int t3) {
 }
 
 
-int getQ (int near, int t1, int t2, int t3, int a, int b, int c, int d) {
+static int getQ (int near, int t1, int t2, int t3, int a, int b, int c, int d) {
     int Q1 = gradientQuantize(d-b, near, t1, t2, t3);
     int Q2 = gradientQuantize(b-c, near, t1, t2, t3);
     int Q3 = gradientQuantize(c-a, near, t1, t2, t3);
@@ -88,7 +88,7 @@ int getQ (int near, int t1, int t2, int t3, int a, int b, int c, int d) {
 }
 
 
-int predict (int a, int b, int c) {
+static int predict (int a, int b, int c) {
     if      (c >= MAX(a, b))
         return MIN(a, b);
     else if (c <= MIN(a, b))
@@ -98,7 +98,7 @@ int predict (int a, int b, int c) {
 }
 
 
-int quantize (int near, int quant, int errval) {
+static int quantize (int near, int quant, int errval) {
     if (errval < 0)
         return -( (near - errval) / quant );
     else
@@ -106,7 +106,7 @@ int quantize (int near, int quant, int errval) {
 }
 
 
-int modRange (int qbeta, int val) {
+static int modRange (int qbeta, int val) {
     if      (val < 0)
         val += qbeta;
     if (val >= (qbeta+1) / 2)
@@ -115,7 +115,7 @@ int modRange (int qbeta, int val) {
 }
 
 
-int getK (int At, int Nt, int ritype) {
+static int getK (int At, int Nt, int ritype) {
     int k = 0;
     if (ritype)
         At += (Nt >> 1);
@@ -135,18 +135,18 @@ typedef struct {
 } BitWriter_t;
 
 
-BitWriter_t initBitWriter (unsigned char *pbuf) {
+static BitWriter_t initBitWriter (unsigned char *pbuf) {
     BitWriter_t bw = {0x80, 0x00, pbuf, pbuf};
     return bw;
 }
 
 
-int getBitWriterLength (BitWriter_t *pbw) {
+static int getBitWriterLength (BitWriter_t *pbw) {
     return pbw->pbuf - pbw->pbuf_base;
 }
 
 
-void writeValue (BitWriter_t *pbw, int value, int byte_cnt) {
+static void writeValue (BitWriter_t *pbw, int value, int byte_cnt) {
     int i = byte_cnt * 8;
     for (i-=8; i>=0; i-=8) {
         pbw->pbuf[0] = (value >> i) & 0xFF;
@@ -155,7 +155,7 @@ void writeValue (BitWriter_t *pbw, int value, int byte_cnt) {
 }
 
 
-void writeBit (BitWriter_t *pbw, int bit) {
+static void writeBit (BitWriter_t *pbw, int bit) {
     if (bit)
         pbw->byte |= pbw->bitmask;
     pbw->bitmask >>= 1;
@@ -170,13 +170,13 @@ void writeBit (BitWriter_t *pbw, int bit) {
 }
 
 
-void writeBits (BitWriter_t *pbw, int bits, int n) {
+static void writeBits (BitWriter_t *pbw, int bits, int n) {
     for (n--; n>=0; n--)
         writeBit(pbw, (bits>>n)&1);
 }
 
 
-void flushBits (BitWriter_t *pbw) {
+static void flushBits (BitWriter_t *pbw) {
     if (pbw->bitmask < 0x80) {
         pbw->pbuf[0] = pbw->byte;
         pbw->pbuf ++;
@@ -186,7 +186,7 @@ void flushBits (BitWriter_t *pbw) {
 }
 
 
-void GolombCoding (BitWriter_t *pbw, int qbpp, int limit, int val, int k) {
+static void GolombCoding (BitWriter_t *pbw, int qbpp, int limit, int val, int k) {
     if ((val>>k) < limit) {
         writeBits(pbw, 0, val>>k);
         writeBit (pbw, 1);
@@ -199,7 +199,7 @@ void GolombCoding (BitWriter_t *pbw, int qbpp, int limit, int val, int k) {
 }
 
 
-void writeJLShearder (BitWriter_t *pbw, int bpp, int near, int ysz, int xsz) {
+static void writeJLShearder (BitWriter_t *pbw, int bpp, int near, int ysz, int xsz) {
     writeValue(pbw, 0xFFD8     , 2);
     writeValue(pbw, 0xFFF7000B , 4);
     writeValue(pbw, bpp        , 1);
@@ -214,7 +214,7 @@ void writeJLShearder (BitWriter_t *pbw, int bpp, int near, int ysz, int xsz) {
 }
 
 
-void writeJLSend (BitWriter_t *pbw) {
+static void writeJLSfooter (BitWriter_t *pbw) {
     writeValue(pbw, 0xFFD9     , 2);
 }
 
@@ -384,7 +384,7 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
     }
     
     flushBits(&bw);
-    writeJLSend(&bw);
+    writeJLSfooter(&bw);
     
     return getBitWriterLength(&bw);
 }

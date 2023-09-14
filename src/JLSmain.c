@@ -1,8 +1,6 @@
 #include <stdio.h>
 
-
-extern int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsigned char *pbuf);               // import from JLS.c
-
+#include "JLS.h"
 
 
 

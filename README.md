@@ -2,88 +2,115 @@
 
 # JPEG-LS encoder
 
-A light-weight JPEG-LS baseline (ITU-T T.87) grayscale image encoder.
-
-C 语言实现的 JPEG-LS 灰度图像编码器。
+A light-weight JPEG-LS baseline (ITU-T T.87) grayscale image encoder in C language.
 
 　
 
-# 开发进度
+# Background of JPEG-LS
 
-编码器：
+**JPEG-LS** (**JLS**) is a lossless/lossy image compression standard which has the best lossless compression ratio compared to PNG, Lossless-JPEG2000, Lossless-WEBP, Lossless-HEIF, etc.
 
-- [x] 灰度 8 bit 图像无损编码 (near=0)
-- [x] 灰度 8 bit 图像有损编码 (near≥1)
-- [x] 灰度 9-16 bit 图像无损编码 (near=0)
-- [ ] 灰度 9-16 bit 图像有损编码 (near≥1)
+The standard specification of JPEG-LS is ITU-T T.87 [1], see https://www.itu.int/rec/T-REC-T.87/en 
 
-解码器：
+**JPEG-LS** uses the maximum difference between the pixels before and after compression (**NEAR** value) to control distortion, **NEAR=0** is the lossless mode; **NEAR>0** is the lossy mode, the larger the **NEAR**, the greater the distortion and the greater the compression ratio.
 
-- [ ] 灰度 8 bit 图像无损解码 (near=0)
-- [ ] 灰度 8 bit 图像有损解码 (near≥1)
-- [ ] 灰度 9-16 bit 图像无损解码 (near=0)
-- [ ] 灰度 9-16 bit 图像有损解码 (near≥1)
+The file suffix name for **JPEG-LS** compressed image is .**jls** .
 
 　
 
-# 代码说明
+# Development progress
 
-代码文件在目录 src 中。包括 2 个文件：
+JPEG-LS encoder:
 
-- `JLS.c` : 实现了 JPEG-LS encoder
-- `JLSMain.c` : 包含 `main` 函数的文件，是调用 `JLS.c` 的一个示例。
+- [x] gray 8 bit image lossless encode (near=0)
+- [x] gray 8 bit image lossy encode (near-lossless, near≥1)
+- [x] gray 9-16 bit image lossless encode (near=0)
+- [ ] gray 9-16 bit image lossy encode (near-lossless, near≥1)
+
+JPEG-LS decoder:
+
+- [ ] gray 8 bit image lossless decode (near=0)
+- [ ] gray 8 bit image lossy decode (near-lossless, near≥1)
+- [ ] gray 9-16 bit image lossless decode (near=0)
+- [ ] gray 9-16 bit image lossy decode (near-lossless, near≥1)
 
 　
 
-# 编译
+# Code list
 
-### Windows (命令行)
+The code is in pure-C. See [src](./src) folder:
 
-如果你把 Visual Studio 里的 C 编译器 (`cl.exe`) 加入了环境变量，也可以用命令行 (CMD) 进行编译。在本目录里运行命令：
+- `JLS.c` : Implement a JLS encoder
+- `JLS.h` : Expose the JLS encoder function to users
+- `JLSMain.c` : A main program with `main()` function, which call the JLS encoder to achieve image file compression.
+
+　
+
+# Compile
+
+### Windows (CMD)
+
+If you add the Microsoft C compiler (`cl. exe`) of Visual Studio to environment variables, you can compile using the command line (CMD).
+
+Run the command in the current directory:
 
 ```bash
 cl src\*.c /FeJLSencode.exe /Ox
 ```
 
-产生可执行文件 JLSencode.exe 。这里我已经编译好。
+We'll get the executable file `JLSencoder.exe` . Here I've compiled it for you, see `JLSencoder.exe` .
 
-### Linux (命令行)
+### Compile in Linux
 
-在本目录里运行命令：
+Run the command in the current directory:
 
 ```bash
 gcc src/*.c -o JLSencode -O3 -Wall
 ```
 
-产生可执行文件 JLSencode 。这里我已编译好。
+We'll get the binary file `JLSencoder` . Here I've compiled it for you, see `JLSencoder` .
 
 　
 
-# 运行
+# Run image compression
 
-### Windows (命令行)
+This program can compress `.pgm` image file to `.jls` image file.
 
-用以下命令压缩图像。其中 `<near>` 值可以取 0-9 的整数。0 代表无损，≥1 代表有损，越大则压缩率越高，图像质量越差
+Note that `.pgm` is a simple uncompressed image format (see PGM Image File Specification [2]). PGM file format contains:
+
+- A simple header that contains the width, height, and depth of this image.
+- The raw pixel values of this image.
+
+### Run image compress in Windows (CMD)
+
+Use the following command to compress a `.pgm` image to a `.jls` image.
 
 ```bash
 JLSencode.exe  <input-image-file(.pgm)>  <output-file(.jls)>  [near]
 ```
 
-例如，以下命令可以把 `img_kodak` 文件夹里的 `01.pgm` 压缩为 `01.jls`  ，near=1 ：
+Where `[near]` is a optional parameter of range 0\~9 :
+
+- 0 : lossless (default)
+- 1\~9 : lossy. The larger the near value, the higher distortion and the lower compressed size.
+
+For example, the following command compress `01.pgm` in `img_kodak` folder to `01.jls` with near=1
 
 ```bash
 JLSencode.exe  img_kodak\01.pgm  01.jls  1
 ```
 
-> :warning: `.pgm` 是一种非压缩的灰度图像文件格式，详见 [2]
+### Run image compress in Linux
 
-### Linux (命令行)
+Use the following command to compress a `.pgm` image to a `.jls` image.
 
-命令格式与 Windows 类似，把可执行文件换成 `./JLSencode` 即可。
+```
+./JLSencode  <input-image-file(.pgm)>  <output-file(.jls)>  [near]
+```
 
 　
 
-# 参考资料
+# Reference
 
 [1] JPEG-LS baseline ITU-T T.87 : https://www.itu.int/rec/T-REC-T.87/en 
 
