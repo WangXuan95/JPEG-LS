@@ -112,6 +112,15 @@ Use the following command to compress a `.pgm` image to a `.jls` image.
 
 # Reference
 
-[1] JPEG-LS baseline ITU-T T.87 : https://www.itu.int/rec/T-REC-T.87/en 
+[1] ITU-T T.87 : JPEG-LS baseline specification : https://www.itu.int/rec/T-REC-T.87/en 
 
 [2] PGM Image File Specification : https://netpbm.sourceforge.net/doc/pgm.html#index
+
+　
+
+# See Also
+
+- UBC's JPEG-LS baseline Public Domain Code : http://www.stat.columbia.edu/~jakulin/jpeg-ls/mirror.htm
+- CharLS, a C++ JPEG-LS library implementation : https://github.com/team-charls/charls
+- FPGA-based Verilog JPEG-LS encoder (basic version which support 8-bit gray lossless and lossy) : https://github.com/WangXuan95/FPGA-JPEG-LS-encoder
+- FPGA-based Verilog JPEG-LS encoder (ultra high performance version which support 8-bit gray lossless) : https://github.com/WangXuan95/UH-JLS
