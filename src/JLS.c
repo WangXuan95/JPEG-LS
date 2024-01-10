@@ -4,16 +4,11 @@
 #define    MIN(x, y)            ( ((x)<(y)) ? (x) : (y) )                            // get the maximum value of x, y
 #define    CLIP(x, min, max)    ( MIN(MAX((x), (min)), (max)) )                      // clip x between min~max
 
-#define    GET2D(ptr,xsz,y,x)   (*( (ptr) + (xsz)*(y) + (x) ))
-
-
-
+#define    G2D(ptr,xsz,y,x)     (*( (ptr) + (xsz)*(y) + (x) ))
 
 #define    RESET_VAL            64
 
 const int J [] = {0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,5,5,6,6,7,7,8,9,10,11,12,13,14,15};
-
-
 
 
 int getQbpp (int alpha) {
@@ -45,26 +40,23 @@ static int isNear (int near, int v1, int v2) {
 
 
 static void samplePixels (int *img, int xsz, int i, int j, int *a, int *b, int *c, int *d) {
-    *a = 0;
-    *b = 0;
-    *c = 0;
-    *d = 0;
+    *a = *b = *c = *d = 0;
     
     if (i > 0) {
-        *b = GET2D(img, xsz, i-1, j);
+        *b = G2D(img, xsz, i-1, j);
         *d = *b;
         if (j+1 < xsz)
-            *d = GET2D(img, xsz, i-1, j+1);
+            *d = G2D(img, xsz, i-1, j+1);
     }
     
     if (j <= 0) {
         *a = *b;
         if (i > 1)
-            *c = GET2D(img, xsz, i-2, j);
+            *c = G2D(img, xsz, i-2, j);
     } else {
-        *a = GET2D(img, xsz, i, j-1);
+        *a = G2D(img, xsz, i, j-1);
         if (i > 0)
-            *c = GET2D(img, xsz, i-1, j-1);
+            *c = G2D(img, xsz, i-1, j-1);
     }
 }
 
@@ -123,8 +115,6 @@ static int getK (int At, int Nt, int ritype) {
         k ++;
     return k;
 }
-
-
 
 
 typedef struct {
@@ -199,18 +189,38 @@ static void GolombCoding (BitWriter_t *pbw, int qbpp, int limit, int val, int k)
 }
 
 
-static void writeJLShearder (BitWriter_t *pbw, int bpp, int near, int ysz, int xsz) {
+static void writeScanHeader (BitWriter_t *pbw, int compID, int near) {
+    writeValue(pbw, 0xFFDA     , 2);
+    writeValue(pbw, 0x0008     , 2);
+    writeValue(pbw, 0x01       , 1);
+    writeValue(pbw, compID     , 1);
+    writeValue(pbw, 0x00       , 1);
+    writeValue(pbw, near       , 1);
+    writeValue(pbw, 0x0000     , 2);
+}
+
+
+static void writeJLShearderGray (BitWriter_t *pbw, int bpp, int ysz, int xsz) {
     writeValue(pbw, 0xFFD8     , 2);
     writeValue(pbw, 0xFFF7000B , 4);
     writeValue(pbw, bpp        , 1);
     writeValue(pbw, ysz        , 2);
     writeValue(pbw, xsz        , 2);
-    writeValue(pbw, 0x01011100 , 4);
-    writeValue(pbw, 0xFFDA     , 2);
-    writeValue(pbw, 0x0008     , 2);
-    writeValue(pbw, 0x010100   , 3);
-    writeValue(pbw, near       , 1);
-    writeValue(pbw, 0x0000     , 2);
+    writeValue(pbw, 0x01       , 1);
+    writeValue(pbw, 0x011100   , 3);
+}
+
+
+static void writeJLShearderRGB  (BitWriter_t *pbw, int bpp, int ysz, int xsz) {
+    writeValue(pbw, 0xFFD8     , 2);
+    writeValue(pbw, 0xFFF70011 , 4);
+    writeValue(pbw, bpp        , 1);
+    writeValue(pbw, ysz        , 2);
+    writeValue(pbw, xsz        , 2);
+    writeValue(pbw, 0x03       , 1);
+    writeValue(pbw, 0x011100   , 3);
+    writeValue(pbw, 0x021100   , 3);
+    writeValue(pbw, 0x031100   , 3);
 }
 
 
@@ -219,9 +229,7 @@ static void writeJLSfooter (BitWriter_t *pbw) {
 }
 
 
-
-
-int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsigned char *pbuf) {
+static void JLSencodeScan (BitWriter_t *p_bw, int bpp, int near, int ysz, int xsz, int *img, int *imgrcon) {
     int A  [364];
     int B  [364];
     int C  [364];
@@ -229,8 +237,6 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
     int Ar [2];
     int Br [2];
     int Nr [2];
-    
-    BitWriter_t bw = initBitWriter(pbuf);
     
     int alpha, t1, t2, t3, quant, qbeta, qbpp, limit, a_init;
     int run_idx = 0;
@@ -252,8 +258,6 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
         Nr[i] = 1;
     }
     
-    writeJLShearder(&bw, bpp, near, ysz, xsz);
-    
     for (i=0; i<ysz; i++) {
         int running=0 , run_cnt=0;
         
@@ -261,7 +265,7 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
             int runend = 0;
             int x, px, rx, a, b, c, d, q, sign, errval, k, map, merrval;
             
-            x = GET2D(img, xsz, i, j);
+            x = G2D(img, xsz, i, j);
             samplePixels(imgrcon, xsz, i, j, &a, &b, &c, &d);
             
             q = getQ(near, t1, t2, t3, a, b, c, d);
@@ -277,23 +281,23 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
             }
             
             if (running) {
-                GET2D(imgrcon, xsz, i, j) = a;
+                G2D(imgrcon, xsz, i, j) = a;
                 
                 run_cnt ++;
                 if (run_cnt >= (1<<J[run_idx])) {
-                    writeBit(&bw, 1);
+                    writeBit(p_bw, 1);
                     run_cnt -= (1<<J[run_idx]);
                     if (run_idx < 31)
                         run_idx ++;
                 }
                 
                 if (j == xsz-1 && run_cnt > 0)
-                    writeBit(&bw, 1);
+                    writeBit(p_bw, 1);
                 
             } else if (runend) {
                 int glimit = limit - 1 - J[run_idx];
                 
-                writeBits(&bw, run_cnt, J[run_idx]+1);
+                writeBits(p_bw, run_cnt, J[run_idx]+1);
                 run_cnt = 0;
                 if (run_idx > 0)
                     run_idx --;
@@ -308,9 +312,9 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
                 if (near) {
                     rx = px + sign * quant * errval;
                     rx = CLIP(rx, 0, alpha-1);
-                    GET2D(imgrcon, xsz, i, j) = rx;
+                    G2D(imgrcon, xsz, i, j) = rx;
                 } else {
-                    GET2D(imgrcon, xsz, i, j) = x;
+                    G2D(imgrcon, xsz, i, j) = x;
                 }
                 
                 errval = modRange(qbeta, errval);
@@ -319,7 +323,7 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
                 map = (errval!=0) && ( (errval>0) == (k==0 && 2*Br[q]<Nr[q]) );
                 merrval = 2 * ABS(errval) - q - map;
                 
-                GolombCoding(&bw, qbpp, glimit, merrval, k);
+                GolombCoding(p_bw, qbpp, glimit, merrval, k);
                 
                 if (errval < 0)
                     Br[q] ++;
@@ -344,9 +348,9 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
                 if (near) {
                     rx = px + sign * quant * errval;
                     rx = CLIP(rx, 0, alpha-1);
-                    GET2D(imgrcon, xsz, i, j) = rx;
+                    G2D(imgrcon, xsz, i, j) = rx;
                 } else {
-                    GET2D(imgrcon, xsz, i, j) = x;
+                    G2D(imgrcon, xsz, i, j) = x;
                 }
                 
                 errval = modRange(qbeta, errval);
@@ -359,7 +363,7 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
                 else
                     merrval += map;
                 
-                GolombCoding(&bw, qbpp, limit, merrval, k);
+                GolombCoding(p_bw, qbpp, limit, merrval, k);
                 
                 B[q] += errval * quant;
                 A[q] += ABS(errval);
@@ -383,12 +387,29 @@ int JLSencode (int bpp, int near, int ysz, int xsz, int *img, int *imgrcon, unsi
         }
     }
     
-    flushBits(&bw);
+    flushBits(p_bw);
+}
+
+
+int JLSencodeImageGray (int bpp, int near, int ysz, int xsz, int *img, unsigned char *pbuf) {
+    BitWriter_t bw = initBitWriter(pbuf);
+    writeJLShearderGray(&bw, bpp, ysz, xsz);
+    writeScanHeader(&bw, 1, near);
+    JLSencodeScan(&bw, bpp, near, ysz, xsz, img, img);
     writeJLSfooter(&bw);
-    
     return getBitWriterLength(&bw);
 }
 
 
-
-
+int JLSencodeImageRGB (int bpp, int near, int ysz, int xsz, int *img_r, int *img_g, int *img_b, unsigned char *pbuf) {
+    BitWriter_t bw = initBitWriter(pbuf);
+    writeJLShearderRGB(&bw, bpp, ysz, xsz);
+    writeScanHeader(&bw, 1, near);
+    JLSencodeScan(&bw, bpp, near, ysz, xsz, img_r, img_r);
+    writeScanHeader(&bw, 2, near);
+    JLSencodeScan(&bw, bpp, near, ysz, xsz, img_g, img_g);
+    writeScanHeader(&bw, 3, near);
+    JLSencodeScan(&bw, bpp, near, ysz, xsz, img_b, img_b);
+    writeJLSfooter(&bw);
+    return getBitWriterLength(&bw);
+}

@@ -2,7 +2,7 @@
 
 # JPEG-LS encoder
 
-A light-weight JPEG-LS baseline (ITU-T T.87) grayscale image encoder in C language.
+A simple JPEG-LS baseline (ITU-T T.87) image compressor (encoder) in C language.
 
 　
 
@@ -20,19 +20,14 @@ The file suffix name for **JPEG-LS** compressed image is .**jls** .
 
 # Development progress
 
-JPEG-LS encoder:
-
 - [x] gray 8 bit image lossless encode (near=0)
 - [x] gray 8 bit image lossy encode (near-lossless, near≥1)
 - [x] gray 9-16 bit image lossless encode (near=0)
 - [ ] gray 9-16 bit image lossy encode (near-lossless, near≥1)
-
-JPEG-LS decoder:
-
-- [ ] gray 8 bit image lossless decode (near=0)
-- [ ] gray 8 bit image lossy decode (near-lossless, near≥1)
-- [ ] gray 9-16 bit image lossless decode (near=0)
-- [ ] gray 9-16 bit image lossy decode (near-lossless, near≥1)
+- [x] RGB 24 bit image lossless encode (near=0)
+- [x] RGB 24 bit image lossy encode (near-lossless, near≥1)
+- [x] RGB 48 bit image lossless encode (near=0)
+- [ ] RGB 24 bit image lossy encode (near-lossless, near≥1)
 
 　
 
@@ -48,14 +43,12 @@ The code is in pure-C. See [src](./src) folder:
 
 # Compile
 
-### Windows (CMD)
+### Compile in Windows (CMD)
 
-If you add the Microsoft C compiler (`cl. exe`) of Visual Studio to environment variables, you can compile using the command line (CMD).
+If you installed MinGW Compiler for Windows, you can compile using the command line (CMD).
 
-Run the command in the current directory:
-
-```bash
-cl src\*.c /FeJLSencode.exe /Ox
+```powershell
+gcc src/*.c -o JLSencode.exe -O3 -Wall
 ```
 
 We'll get the executable file `JLSencoder.exe` . Here I've compiled it for you, see `JLSencoder.exe` .
@@ -68,25 +61,26 @@ Run the command in the current directory:
 gcc src/*.c -o JLSencode -O3 -Wall
 ```
 
-We'll get the binary file `JLSencoder` . Here I've compiled it for you, see `JLSencoder` .
+We'll get the binary file `JLSencoder` . 
 
 　
 
 # Run image compression
 
-This program can compress `.pgm` image file to `.jls` image file.
+This program can compress the following three types of image file to `.jls` compressed file.
 
-Note that `.pgm` is a simple uncompressed image format (see PGM Image File Specification [2]). PGM file format contains:
+- PGM grayscale image file, whose specification is in https://netpbm.sourceforge.net/doc/pgm.html
+- PPM RGB image file, whose specification is in https://netpbm.sourceforge.net/doc/ppm.html
+- PNM grayscale or RGB image file, whose specification is in https://netpbm.sourceforge.net/doc/pnm.html
 
-- A simple header that contains the width, height, and depth of this image.
-- The raw pixel values of this image.
+There are some PGM and PPM files in [testimage ](./testimage)directory.
 
 ### Run image compress in Windows (CMD)
 
-Use the following command to compress a `.pgm` image to a `.jls` image.
+Use the following command to compress a image file to a `.jls` file.
 
 ```bash
-JLSencode.exe  <input-image-file(.pgm)>  <output-file(.jls)>  [near]
+.\JLSencode.exe  <input-image-file>  <output-file(.jls)>  [near]
 ```
 
 Where `[near]` is a optional parameter of range 0\~9 :
@@ -94,19 +88,29 @@ Where `[near]` is a optional parameter of range 0\~9 :
 - 0 : lossless (default)
 - 1\~9 : lossy. The larger the near value, the higher distortion and the lower compressed size.
 
-For example, the following command compress `01.pgm` in `img_kodak` folder to `01.jls` with near=1
+For example, the following command to compress `rgb1.ppm` in `testimage` folder to `rgb1.jls` with near=1
 
 ```bash
-JLSencode.exe  img_kodak\01.pgm  01.jls  1
+.\JLSencode.exe  testimage\rgb1.ppm  rgb1.jls  1
 ```
 
 ### Run image compress in Linux
 
-Use the following command to compress a `.pgm` image to a `.jls` image.
+Use the following command to compress a image file to a `.jls` file.
 
 ```
-./JLSencode  <input-image-file(.pgm)>  <output-file(.jls)>  [near]
+./JLSencode  <input-image-file>  <output-file(.jls)>  [near]
 ```
+
+　
+
+# Appendix: How to decompress .jls file?
+
+This repo do not have a JPEG-LS decompressor. There are several ways to decompress a .jls file:
+
+- The most convenient method: Try [this website](https://products.groupdocs.app/viewer/JLS) to view .jls image online (it may not work).
+- Use other JPEG-LS code or libraries such as UBC's JPEG-LS code [3] or CharLS [4].
+- Use python `pillow` library and `pillow_jpls` library, see [5].
 
 　
 
@@ -114,13 +118,14 @@ Use the following command to compress a `.pgm` image to a `.jls` image.
 
 [1] ITU-T T.87 : JPEG-LS baseline specification : https://www.itu.int/rec/T-REC-T.87/en 
 
-[2] PGM Image File Specification : https://netpbm.sourceforge.net/doc/pgm.html#index
+[2] PNM Image File Specification : https://netpbm.sourceforge.net/doc/pnm.html
 
-　
+[3] UBC's JPEG-LS baseline Public Domain Code : http://www.stat.columbia.edu/~jakulin/jpeg-ls/mirror.htm
 
-# See Also
+[4] CharLS, a C++ JPEG-LS library implementation : https://github.com/team-charls/charls
 
-- UBC's JPEG-LS baseline Public Domain Code : http://www.stat.columbia.edu/~jakulin/jpeg-ls/mirror.htm
-- CharLS, a C++ JPEG-LS library implementation : https://github.com/team-charls/charls
-- FPGA-based Verilog JPEG-LS encoder (basic version which support 8-bit gray lossless and lossy) : https://github.com/WangXuan95/FPGA-JPEG-LS-encoder
-- FPGA-based Verilog JPEG-LS encoder (ultra high performance version which support 8-bit gray lossless) : https://github.com/WangXuan95/UH-JLS
+[5] pillow-jpls library for Python - PyPI :  https://pypi.org/project/pillow-jpls
+
+[6] FPGA-based Verilog JPEG-LS encoder (basic version which support 8-bit gray lossless and lossy) : https://github.com/WangXuan95/FPGA-JPEG-LS-encoder
+
+[7] FPGA-based Verilog JPEG-LS encoder (ultra high performance version which support 8-bit gray lossless) : https://github.com/WangXuan95/UH-JLS
